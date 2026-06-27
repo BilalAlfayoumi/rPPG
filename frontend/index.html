@@ -169,6 +169,11 @@
         client.connect();
         client.startStreaming(webcam, 10);
         if (meshEnabled) mesh.start();
+        // Active le son par défaut (le clic Démarrer est une interaction
+        // utilisateur valide, donc l'autoplay audio n'est pas bloqué)
+        heart.enable();
+        soundBtn.textContent = "🔊 Son";
+        soundBtn.classList.add("active");
         startBtn.disabled = true;
         stopBtn.disabled  = false;
       } catch (err) {
