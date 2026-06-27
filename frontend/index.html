@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rPPG — Fréquence cardiaque par webcam</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+  <h1>rPPG Heart Rate Monitor</h1>
+
+  <div class="grid">
+
+    <!-- Vidéo webcam -->
+    <div class="video-card">
+      <video id="webcam" autoplay muted playsinline></video>
+      <canvas id="mesh-overlay" class="mesh-overlay"></canvas>
+      <canvas id="capture"></canvas>
+      <div id="face-badge" class="face-badge searching">Recherche visage...</div>
+    </div>
+
+    <!-- Panneau droit -->
+    <div class="right-panel">
+
+      <!-- BPM -->
+      <div class="card bpm-display">
+        <div id="bpm-value" class="bpm-value">--</div>
+        <div class="bpm-unit">BPM</div>
+        <div id="bpm-label" class="bpm-label">En attente de donnees...</div>
+      </div>
+
+      <!-- Barres de progression -->
+      <div class="card bar-group">
+        <div class="bar-row">
+          <div class="bar-header">
+            <span>Buffer</span>
+            <span id="buffer-pct">0 %</span>
+          </div>
+          <div class="bar-track"><div id="buffer-fill" class="bar-fill"></div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-header">
+            <span>Qualite signal</span>
+            <span id="quality-pct">--</span>
+          </div>
+          <div class="bar-track"><div id="quality-fill" class="bar-fill"></div></div>
+        </div>
+      </div>
+
+      <!-- Graphe BVP -->
+      <div class="card chart-card">
+        <h3>Signal BVP (pouls brut)</h3>
+        <canvas id="bvp-chart"></canvas>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Controles -->
+  <div class="controls">
+    <button id="start-btn">Demarrer</button>
+    <button id="stop-btn" disabled>Arreter</button>
+    <button id="sound-btn" class="toggle-btn">🔇 Son</button>
+    <button id="mesh-btn" class="toggle-btn active">🟢 Masque</button>
+    <span id="status-text" class="status-text">En attente...</span>
+  </div>
+
+  <script type="module">
+    import { WebcamCapture }   from "/static/js/webcam.js";
+    import { RPPGClient }      from "/static/js/websocket_client.js";
+    import { BvpChart }        from "/static/js/chart.js";
+    import { FaceMeshOverlay } from "/static/js/face_mesh_overlay.js";
+    import { HeartbeatAudio }  from "/static/js/heartbeat_audio.js";
+
+    // wss:// en HTTPS (production Fly.io), ws:// en local
+    const WS_PROTO = location.protocol === "https:" ? "wss" : "ws";
+    const WS_URL = `${WS_PROTO}://${location.host}/ws/rppg`;
+
+    const webcam = new WebcamCapture(
+      document.getElementById("webcam"),
+      document.getElementById("capture")
+    );
+    const chart   = new BvpChart(document.getElementById("bvp-chart"));
+    const client  = new RPPGClient(WS_URL, onMessage, onStatus);
+    const mesh    = new FaceMeshOverlay(
+      document.getElementById("webcam"),
+      document.getElementById("mesh-overlay")
+    );
+    const heart   = new HeartbeatAudio();
+
+    let meshEnabled = true;
+
+    const bpmEl      = document.getElementById("bpm-value");
+    const bpmLabel   = document.getElementById("bpm-label");
+    const faceBadge  = document.getElementById("face-badge");
+    const bufFill    = document.getElementById("buffer-fill");
+    const bufPct     = document.getElementById("buffer-pct");
+    const qualFill   = document.getElementById("quality-fill");
+    const qualPct    = document.getElementById("quality-pct");
+    const startBtn   = document.getElementById("start-btn");
+    const stopBtn    = document.getElementById("stop-btn");
+    const soundBtn   = document.getElementById("sound-btn");
+    const meshBtn    = document.getElementById("mesh-btn");
+    const statusText = document.getElementById("status-text");
+
+    function onMessage(msg) {
+      const pct = Math.round((msg.buffer_fill ?? 0) * 100);
+      bufFill.style.width = pct + "%";
+      bufPct.textContent  = pct + " %";
+
+      if (msg.type === "bpm_update") {
+        bpmEl.textContent = msg.bpm;
+        bpmEl.classList.remove("pulse");
+        void bpmEl.offsetWidth;
+        bpmEl.classList.add("pulse");
+        bpmLabel.textContent = "Frequence cardiaque estimee";
+        setFace(true);
+        heart.setBpm(msg.bpm);  // synchronise le son sur le BPM
+
+        const q = Math.round((msg.confidence ?? 0) * 100);
+        qualFill.style.width = q + "%";
+        qualPct.textContent  = q + " %";
+        chart.update(msg.bvp_signal ?? []);
+
+      } else if (msg.type === "no_face") {
+        setFace(false);
+        bpmLabel.textContent = "Aucun visage detecte";
+
+      } else if (msg.type === "collecting") {
+        setFace(true);
+        bpmLabel.textContent = `Accumulation du buffer (${pct} %)...`;
+      }
+    }
+
+    function onStatus(status) {
+      const labels = {
+        connecting: "Connexion au serveur...",
+        open:       "Connecte - streaming en cours",
+        closed:     "Deconnecte",
+        error:      "Erreur de connexion",
+      };
+      statusText.textContent = labels[status] ?? status;
+    }
+
+    function setFace(detected) {
+      faceBadge.textContent = detected ? "Visage detecte" : "Recherche visage...";
+      faceBadge.className   = "face-badge " + (detected ? "detected" : "searching");
+    }
+
+    // Précharge le modèle MediaPipe dès l'ouverture de la page (tâche de fond)
+    mesh.load().then(() => {
+      statusText.textContent = "Pret - clique sur Demarrer";
+    }).catch((e) => {
+      console.warn("[rPPG] Masque facial indisponible:", e);
+      meshEnabled = false;
+      meshBtn.disabled = true;
+      meshBtn.textContent = "⚪ Masque";
+      meshBtn.classList.remove("active");
+    });
+
+    startBtn.addEventListener("click", async () => {
+      try {
+        await webcam.start();
+        client.connect();
+        client.startStreaming(webcam, 10);
+        if (meshEnabled) mesh.start();
+        startBtn.disabled = true;
+        stopBtn.disabled  = false;
+      } catch (err) {
+        console.error("[rPPG] Erreur dans start:", err);
+        statusText.textContent = "Erreur : " + err.message;
+      }
+    });
+
+    stopBtn.addEventListener("click", () => {
+      client.stopStreaming();
+      client.disconnect();
+      webcam.stop();
+      mesh.stop();
+      heart.disable();
+      soundBtn.textContent = "🔇 Son";
+      soundBtn.classList.remove("active");
+      startBtn.disabled = false;
+      stopBtn.disabled  = true;
+      bpmEl.textContent = "--";
+      bpmLabel.textContent = "En attente...";
+      bufFill.style.width = "0%";
+      bufPct.textContent  = "0 %";
+      qualFill.style.width = "0%";
+      qualPct.textContent  = "--";
+      setFace(false);
+      chart.clear();
+    });
+
+    meshBtn.addEventListener("click", () => {
+      meshEnabled = !meshEnabled;
+      if (meshEnabled) {
+        if (webcam.isRunning) mesh.start();
+        meshBtn.textContent = "🟢 Masque";
+        meshBtn.classList.add("active");
+      } else {
+        mesh.stop();
+        meshBtn.textContent = "⚪ Masque";
+        meshBtn.classList.remove("active");
+      }
+    });
+
+    soundBtn.addEventListener("click", () => {
+      if (heart.isEnabled) {
+        heart.disable();
+        soundBtn.textContent = "🔇 Son";
+        soundBtn.classList.remove("active");
+      } else {
+        heart.enable();
+        soundBtn.textContent = "🔊 Son";
+        soundBtn.classList.add("active");
+      }
+    });
+  </script>
+
+</body>
+</html>

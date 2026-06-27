@@ -1,0 +1,15 @@
+services:
+  rppg:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - LOG_LEVEL=debug
+    volumes:
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
+    command: >
+      uvicorn backend.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload

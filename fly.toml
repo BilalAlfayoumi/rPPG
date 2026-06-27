@@ -1,0 +1,18 @@
+# Configuration Fly.io — rPPG Heart Rate Monitor
+# Déploiement : fly launch (première fois) puis fly deploy
+
+app = "rppg-monitor"
+primary_region = "cdg"  # Paris
+
+[build]
+
+[http_service]
+  internal_port = 8000
+  force_https = true          # WebSocket sécurisé (wss://) en production
+  auto_stop_machines = "stop" # économise : la machine s'arrête après inactivité
+  auto_start_machines = true  # et redémarre automatiquement à la connexion
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"              # dlib + OpenCV + SciPy : 256 Mo seraient trop justes
