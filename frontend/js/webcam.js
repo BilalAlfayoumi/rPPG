@@ -17,7 +17,11 @@ export class WebcamCapture {
       );
     }
     this._stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user" },  // pas de contrainte de résolution : laisse le navigateur choisir
+      video: {
+        facingMode: "user",           // caméra frontale (selfie)
+        width:  { ideal: 640 },       // ratio paysage : évite une vidéo trop
+        height: { ideal: 480 },       // haute en portrait mobile (le masque reste aligné)
+      },
       audio: false,
     });
     this.video.srcObject = this._stream;

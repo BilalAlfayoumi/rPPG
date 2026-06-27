@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:        # déclenchement manuel possible depuis l'onglet Actions
 jobs:
   deploy:
     name: Deploy app
