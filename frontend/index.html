@@ -137,10 +137,12 @@
 
     function onStatus(status) {
       const labels = {
-        connecting: "Connexion au serveur...",
-        open:       "Connecte - streaming en cours",
-        closed:     "Deconnecte",
-        error:      "Erreur de connexion",
+        connecting:         "Connexion au serveur...",
+        "connecting-retry": "Connexion au serveur...",
+        reconnecting:       "Reveil du serveur, reconnexion...",
+        open:               "Connecte - streaming en cours",
+        closed:             "Deconnecte",
+        error:              "Echec de connexion - reessaie plus tard",
       };
       statusText.textContent = labels[status] ?? status;
     }

@@ -10,27 +10,60 @@ export class RPPGClient {
     this._onStatusChange = onStatusChange;
     this._ws = null;
     this._streamInterval = null;
+    this._intentionalClose = false;
+    this._retries = 0;
+    this._maxRetries = 6;       // ~couvre un réveil à froid de la machine Fly
+    this._everOpened = false;
   }
 
   connect() {
-    this._onStatusChange("connecting");
+    this._intentionalClose = false;
+    this._onStatusChange(this._retries > 0 ? "connecting-retry" : "connecting");
     this._ws = new WebSocket(this._url);
     this._ws.binaryType = "arraybuffer";
 
-    this._ws.addEventListener("open", () => this._onStatusChange("open"));
+    this._ws.addEventListener("open", () => {
+      this._retries = 0;
+      this._everOpened = true;
+      this._onStatusChange("open");
+    });
+
     this._ws.addEventListener("close", () => {
       this._stopInterval();
-      this._onStatusChange("closed");
+      if (this._intentionalClose) {
+        this._onStatusChange("closed");
+      } else {
+        this._scheduleReconnect();
+      }
     });
+
     this._ws.addEventListener("error", () => {
+      // 'error' est suivi de 'close' : on laisse close gérer le retry
       this._stopInterval();
-      this._onStatusChange("error");
     });
+
     this._ws.addEventListener("message", (e) => {
       try {
         this._onMessage(JSON.parse(e.data));
       } catch (_) {}
     });
+  }
+
+  /** Reconnexion automatique avec backoff (gère le réveil à froid du serveur). */
+  _scheduleReconnect() {
+    if (this._retries >= this._maxRetries) {
+      this._onStatusChange("error");
+      return;
+    }
+    this._retries += 1;
+    const delay = Math.min(1000 * this._retries, 4000);
+    this._onStatusChange("reconnecting");
+    setTimeout(() => {
+      if (!this._intentionalClose) {
+        this.connect();
+        if (this._pendingWebcam) this.startStreaming(this._pendingWebcam, this._pendingFps);
+      }
+    }, delay);
   }
 
   /**
@@ -39,6 +72,8 @@ export class RPPGClient {
    * @param {number} fps - fréquence d'envoi (défaut 10)
    */
   startStreaming(webcam, fps = 10) {
+    this._pendingWebcam = webcam;  // mémorisé pour reprendre après reconnexion
+    this._pendingFps = fps;
     this._stopInterval();
     this._streamInterval = setInterval(async () => {
       if (!webcam.isRunning || this._ws?.readyState !== WebSocket.OPEN) return;
@@ -52,6 +87,8 @@ export class RPPGClient {
   }
 
   disconnect() {
+    this._intentionalClose = true;
+    this._pendingWebcam = null;
     this._stopInterval();
     this._ws?.close();
   }

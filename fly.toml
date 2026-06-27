@@ -1,18 +1,22 @@
-# Configuration Fly.io — rPPG Heart Rate Monitor
-# Déploiement : fly launch (première fois) puis fly deploy
+# fly.toml app configuration file generated for rppg-monitor on 2026-06-27T19:18:31+02:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
-app = "rppg-monitor"
-primary_region = "cdg"  # Paris
+app = 'rppg-monitor'
+primary_region = 'cdg'
 
 [build]
 
 [http_service]
   internal_port = 8000
-  force_https = true          # WebSocket sécurisé (wss://) en production
-  auto_stop_machines = "stop" # économise : la machine s'arrête après inactivité
-  auto_start_machines = true  # et redémarre automatiquement à la connexion
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
   min_machines_running = 0
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "1gb"              # dlib + OpenCV + SciPy : 256 Mo seraient trop justes
+  size = 'shared-cpu-1x'
+  memory = '1gb'
+  cpus = 1
+  memory_mb = 1024
