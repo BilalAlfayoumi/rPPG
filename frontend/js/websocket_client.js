@@ -1,55 +1,57 @@
 export class RPPGClient {
   /**
-   * @param {string} url - URL WebSocket (ex: "ws://localhost:8000/ws/rppg")
-   * @param {function} onMessage - callback appelé à chaque message JSON reçu
-   * @param {function} onStatusChange - callback(status: "connecting"|"open"|"closed"|"error")
+   * Client WebSocket : envoie les valeurs RGB extraites du visage (côté navigateur)
+   * et reçoit les mises à jour de BPM. Reconnexion automatique (réveil à froid).
+   *
+   * @param {string} url
+   * @param {function} onMessage - callback(message JSON reçu)
+   * @param {function} onStatusChange - callback("connecting"|"open"|"reconnecting"|"closed"|"error")
    */
   constructor(url, onMessage, onStatusChange) {
     this._url = url;
     this._onMessage = onMessage;
     this._onStatusChange = onStatusChange;
     this._ws = null;
-    this._streamInterval = null;
     this._intentionalClose = false;
     this._retries = 0;
-    this._maxRetries = 6;       // ~couvre un réveil à froid de la machine Fly
-    this._everOpened = false;
+    this._maxRetries = 6;
   }
 
   connect() {
     this._intentionalClose = false;
-    this._onStatusChange(this._retries > 0 ? "connecting-retry" : "connecting");
+    this._onStatusChange("connecting");
     this._ws = new WebSocket(this._url);
-    this._ws.binaryType = "arraybuffer";
 
     this._ws.addEventListener("open", () => {
       this._retries = 0;
-      this._everOpened = true;
       this._onStatusChange("open");
     });
-
     this._ws.addEventListener("close", () => {
-      this._stopInterval();
-      if (this._intentionalClose) {
-        this._onStatusChange("closed");
-      } else {
-        this._scheduleReconnect();
-      }
+      if (this._intentionalClose) this._onStatusChange("closed");
+      else this._scheduleReconnect();
     });
-
-    this._ws.addEventListener("error", () => {
-      // 'error' est suivi de 'close' : on laisse close gérer le retry
-      this._stopInterval();
-    });
-
+    this._ws.addEventListener("error", () => {/* 'close' gère le retry */});
     this._ws.addEventListener("message", (e) => {
-      try {
-        this._onMessage(JSON.parse(e.data));
-      } catch (_) {}
+      try { this._onMessage(JSON.parse(e.data)); } catch (_) {}
     });
   }
 
-  /** Reconnexion automatique avec backoff (gère le réveil à froid du serveur). */
+  /** Envoie un échantillon RGB [r,g,b] au serveur (si la connexion est ouverte). */
+  sendRgb(rgb) {
+    if (this._ws?.readyState === WebSocket.OPEN) {
+      this._ws.send(JSON.stringify({ type: "rgb", rgb }));
+    }
+  }
+
+  disconnect() {
+    this._intentionalClose = true;
+    this._ws?.close();
+  }
+
+  get isOpen() {
+    return this._ws?.readyState === WebSocket.OPEN;
+  }
+
   _scheduleReconnect() {
     if (this._retries >= this._maxRetries) {
       this._onStatusChange("error");
@@ -59,44 +61,7 @@ export class RPPGClient {
     const delay = Math.min(1000 * this._retries, 4000);
     this._onStatusChange("reconnecting");
     setTimeout(() => {
-      if (!this._intentionalClose) {
-        this.connect();
-        if (this._pendingWebcam) this.startStreaming(this._pendingWebcam, this._pendingFps);
-      }
+      if (!this._intentionalClose) this.connect();
     }, delay);
-  }
-
-  /**
-   * Lance l'envoi des frames à fps images/s.
-   * @param {WebcamCapture} webcam
-   * @param {number} fps - fréquence d'envoi (défaut 10)
-   */
-  startStreaming(webcam, fps = 10) {
-    this._pendingWebcam = webcam;  // mémorisé pour reprendre après reconnexion
-    this._pendingFps = fps;
-    this._stopInterval();
-    this._streamInterval = setInterval(async () => {
-      if (!webcam.isRunning || this._ws?.readyState !== WebSocket.OPEN) return;
-      const blob = await webcam.captureBlob(0.6);
-      if (blob) this._ws.send(blob);
-    }, 1000 / fps);
-  }
-
-  stopStreaming() {
-    this._stopInterval();
-  }
-
-  disconnect() {
-    this._intentionalClose = true;
-    this._pendingWebcam = null;
-    this._stopInterval();
-    this._ws?.close();
-  }
-
-  _stopInterval() {
-    if (this._streamInterval) {
-      clearInterval(this._streamInterval);
-      this._streamInterval = null;
-    }
   }
 }

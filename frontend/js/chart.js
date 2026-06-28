@@ -11,8 +11,12 @@ export class BvpChart {
     this._data = [];
     this._raf = null;
     this._dirty = false;
+    this._color = "0,204,239";   // cyan par défaut (design)
     this._startLoop();
   }
+
+  /** Couleur de la courbe en "r,g,b" (ex. "255,31,78" pour le rouge). */
+  setColor(rgb) { this._color = rgb; this._dirty = true; }
 
   update(points) {
     if (!Array.isArray(points) || points.length === 0) return;
@@ -75,8 +79,8 @@ export class BvpChart {
 
     // Courbe avec dégradé
     const gradient = ctx.createLinearGradient(0, 0, W, 0);
-    gradient.addColorStop(0, "rgba(79,142,247,0.3)");
-    gradient.addColorStop(1, "rgba(79,142,247,1)");
+    gradient.addColorStop(0, `rgba(${this._color},0.3)`);
+    gradient.addColorStop(1, `rgba(${this._color},1)`);
 
     ctx.beginPath();
     ctx.strokeStyle = gradient;

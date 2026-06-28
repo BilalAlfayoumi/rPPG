@@ -3,23 +3,30 @@ name = "rppg"
 version = "0.1.0"
 description = "Remote photoplethysmography — heart rate detection via webcam"
 requires-python = ">=3.11"
+# Dépendances du SERVEUR (prod) — légères : l'extraction ROI se fait dans le
+# navigateur (MediaPipe JS), le serveur ne fait que le traitement du signal.
 dependencies = [
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.29.0",
     "websockets>=12.0",
-    "opencv-python-headless>=4.9.0",
     "numpy>=1.26.0",
     "scipy>=1.13.0",
     "python-multipart>=0.0.9",
-    "dlib>=20.0",
 ]
 
 [project.optional-dependencies]
+# Benchmark hors-ligne sur UBFC (lecture vidéo + ROI dlib). Pas nécessaire en prod.
+bench = [
+    "opencv-python-headless>=4.9.0",
+    "dlib>=20.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "httpx>=0.27.0",
     "ruff>=0.4.0",
+    "opencv-python-headless>=4.9.0",
+    "dlib>=20.0",
 ]
 
 [tool.pytest.ini_options]
